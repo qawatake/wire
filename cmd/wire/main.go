@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Changes made by qawatake (github.com/qawatake)
+
 // Wire is a compile-time dependency injection tool.
 //
 // For an overview, see https://github.com/google/wire/blob/master/README.md
