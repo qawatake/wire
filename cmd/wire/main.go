@@ -402,9 +402,9 @@ func (*graphCmd) Synopsis() string {
 	return "print a graph of the providers"
 }
 func (*graphCmd) Usage() string {
-	return `graph [packages]
+	return `graph -injector [injector_function] [package]
 
-	Given one or more packages, graph prints a graph of the providers.
+	Given a package, graph prints a graph of the providers.
 
 	If no packages are listed, it defaults to ".".
 `
@@ -415,12 +415,22 @@ func (cmd *graphCmd) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&cmd.ignoreType, "ignore_type", false, "ignore provided types")
 }
 func (cmd *graphCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+	if cmd.injector == "" {
+		log.Println("injector is required")
+		f.Usage()
+		return subcommands.ExitFailure
+	}
 	wd, err := os.Getwd()
 	if err != nil {
 		log.Println("failed to get working directory: ", err)
 		return subcommands.ExitFailure
 	}
 	info, errs := wire.Load(ctx, wd, os.Environ(), cmd.tags, packages(f))
+	if len(errs) > 0 {
+		logErrors(errs)
+		log.Println("error loading packages")
+		return subcommands.ExitFailure
+	}
 	if info != nil {
 		for id, set := range info.InjectorSets {
 			if id.VarName != cmd.injector {
@@ -432,25 +442,22 @@ func (cmd *graphCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...inter
 					errs = append(errs, err)
 					continue
 				}
-				if len(tree.lines) == 0 {
-					continue
+				if len(tree.lines) > 0 {
+					s, err := mermaidFlowchart(tree.lines)
+					if err != nil {
+						errs = append(errs, err)
+						continue
+					}
+					// not fmt.Println because s has trailing newline.
+					fmt.Print(s)
+					return subcommands.ExitSuccess
 				}
-				s, err := mermaidFlowchart(tree.lines)
-				if err != nil {
-					errs = append(errs, err)
-					continue
-				}
-				// not fmt.Println because s has trailing newline.
-				fmt.Print(s)
+
 			}
 		}
 	}
-	if len(errs) > 0 {
-		logErrors(errs)
-		log.Println("error loading packages")
-		return subcommands.ExitFailure
-	}
-	return subcommands.ExitSuccess
+	log.Println("no graph generated")
+	return subcommands.ExitFailure
 }
 
 type providerTree struct {
