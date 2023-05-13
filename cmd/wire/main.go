@@ -395,6 +395,10 @@ type graphCmd struct {
 	injector   string
 	tags       string
 	ignoreType bool
+	// TODO: [Interaction - Flowcharts Syntax | Mermaid](https://mermaid.js.org/syntax/flowchart.html#interaction)
+	// href bool
+	// TODO: trim package prefix
+	trimPrefixes string
 }
 
 func (*graphCmd) Name() string { return "graph" }
