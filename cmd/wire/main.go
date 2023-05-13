@@ -392,8 +392,9 @@ func (cmd *checkCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...inter
 }
 
 type graphCmd struct {
-	injector string
-	tags     string
+	injector   string
+	tags       string
+	ignoreType bool
 }
 
 func (*graphCmd) Name() string { return "graph" }
@@ -411,6 +412,7 @@ func (*graphCmd) Usage() string {
 func (cmd *graphCmd) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&cmd.injector, "injector", "", "target injector function")
 	f.StringVar(&cmd.tags, "tags", "", "append build tags to the default wirebuild")
+	f.BoolVar(&cmd.ignoreType, "ignore_type", false, "ignore provided types")
 }
 func (cmd *graphCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
 	wd, err := os.Getwd()
@@ -425,7 +427,7 @@ func (cmd *graphCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...inter
 				continue
 			}
 			for _, root := range set.Providers {
-				tree := newProviderTree(set)
+				tree := newProviderTree(set, cmd.ignoreType)
 				if err := tree.Build(root); err != nil {
 					errs = append(errs, err)
 					continue
@@ -452,12 +454,13 @@ func (cmd *graphCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...inter
 }
 
 type providerTree struct {
-	lines []string
-	set   *wire.ProviderSet
+	lines      []string
+	set        *wire.ProviderSet
+	ignoreType bool
 }
 
-func newProviderTree(set *wire.ProviderSet) *providerTree {
-	return &providerTree{set: set}
+func newProviderTree(set *wire.ProviderSet, ignoreType bool) *providerTree {
+	return &providerTree{set: set, ignoreType: ignoreType}
 }
 
 func (t *providerTree) Build(root *wire.Provider) error {
@@ -466,7 +469,11 @@ func (t *providerTree) Build(root *wire.Provider) error {
 			continue
 		}
 		argProvider := t.set.For(arg.Type).Provider()
-		t.lines = append(t.lines, fmt.Sprintf("%s --> %s;", providerID(argProvider), providerID(root)))
+		if t.ignoreType {
+			t.lines = append(t.lines, fmt.Sprintf("%s --> %s;", providerID(argProvider), providerID(root)))
+		} else {
+			t.lines = append(t.lines, fmt.Sprintf("%s -- %q --> %s;", providerID(argProvider), arg.Type, providerID(root)))
+		}
 		if err := t.Build(argProvider); err != nil {
 			return err
 		}
