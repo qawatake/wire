@@ -47,6 +47,7 @@ func main() {
 	subcommands.Register(&diffCmd{}, "")
 	subcommands.Register(&genCmd{}, "")
 	subcommands.Register(&showCmd{}, "")
+	subcommands.Register(&graphCmd{}, "")
 	flag.Parse()
 
 	// Initialize the default logger to log to stderr.
@@ -66,6 +67,7 @@ func main() {
 		"diff":     true,
 		"gen":      true,
 		"show":     true,
+		"graph":    true,
 	}
 	// Default to running the "gen" command.
 	if args := flag.Args(); len(args) == 0 || !allCmds[args[0]] {
@@ -387,6 +389,128 @@ func (cmd *checkCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...inter
 		return subcommands.ExitFailure
 	}
 	return subcommands.ExitSuccess
+}
+
+type graphCmd struct {
+	injector string
+	tags     string
+}
+
+func (*graphCmd) Name() string { return "graph" }
+func (*graphCmd) Synopsis() string {
+	return "print a graph of the providers"
+}
+func (*graphCmd) Usage() string {
+	return `graph [packages]
+
+	Given one or more packages, graph prints a graph of the providers.
+
+	If no packages are listed, it defaults to ".".
+`
+}
+func (cmd *graphCmd) SetFlags(f *flag.FlagSet) {
+	f.StringVar(&cmd.injector, "injector", "", "target injector function")
+	f.StringVar(&cmd.tags, "tags", "", "append build tags to the default wirebuild")
+}
+func (cmd *graphCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+	wd, err := os.Getwd()
+	if err != nil {
+		log.Println("failed to get working directory: ", err)
+		return subcommands.ExitFailure
+	}
+	info, errs := wire.Load(ctx, wd, os.Environ(), cmd.tags, packages(f))
+	if info != nil {
+		for id, set := range info.InjectorSets {
+			if id.VarName != cmd.injector {
+				continue
+			}
+			for _, root := range set.Providers {
+				tree := newProviderTree(set)
+				if err := tree.Build(root); err != nil {
+					errs = append(errs, err)
+					continue
+				}
+				if len(tree.lines) == 0 {
+					continue
+				}
+				s, err := mermaidFlowchart(tree.lines)
+				if err != nil {
+					errs = append(errs, err)
+					continue
+				}
+				// not fmt.Println because s has trailing newline.
+				fmt.Print(s)
+			}
+		}
+	}
+	if len(errs) > 0 {
+		logErrors(errs)
+		log.Println("error loading packages")
+		return subcommands.ExitFailure
+	}
+	return subcommands.ExitSuccess
+}
+
+type providerTree struct {
+	lines []string
+	set   *wire.ProviderSet
+}
+
+func newProviderTree(set *wire.ProviderSet) *providerTree {
+	return &providerTree{set: set}
+}
+
+func (t *providerTree) Build(root *wire.Provider) error {
+	for _, arg := range root.Args {
+		if !t.set.For(arg.Type).IsProvider() {
+			continue
+		}
+		argProvider := t.set.For(arg.Type).Provider()
+		t.lines = append(t.lines, fmt.Sprintf("%s --> %s;", providerID(argProvider), providerID(root)))
+		if err := t.Build(argProvider); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func providerID(p *wire.Provider) string {
+	return p.Pkg.Path() + "." + p.Name
+}
+
+func mermaidFlowchart(lines []string) (string, error) {
+	var s string
+
+	theme := "%%{init:{'theme':'default','flowchart':{'rankSpacing':500}}}%%\n"
+	header := "flowchart TD;\n"
+
+	s += theme
+	s += header
+
+	lines = uniq(lines)
+
+	sort.Slice(lines, func(i, j int) bool {
+		return strings.Compare(lines[i], lines[j]) < 0
+	})
+
+	for _, ss := range lines {
+		s += fmt.Sprintf("\t%s\n", ss)
+	}
+
+	return s, nil
+}
+
+// the order of lines can be changed by uniq
+func uniq(lines []string) []string {
+	m := make(map[string]struct{})
+	for _, s := range lines {
+		m[s] = struct{}{}
+	}
+	var ss []string
+	for k := range m {
+		ss = append(ss, k)
+	}
+	return ss
 }
 
 type outGroup struct {
