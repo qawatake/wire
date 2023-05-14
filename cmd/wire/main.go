@@ -391,13 +391,14 @@ func (cmd *checkCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...inter
 	return subcommands.ExitSuccess
 }
 
+// TODO: don't print theme
 type graphCmd struct {
 	injector   string
 	tags       string
 	ignoreType bool
 	// TODO: [Interaction - Flowcharts Syntax | Mermaid](https://mermaid.js.org/syntax/flowchart.html#interaction)
 	// href bool
-	// TODO: trim package prefix
+	// TODO: sort by package name that is not trimmed
 	trimPrefixes string
 }
 
