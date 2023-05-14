@@ -558,7 +558,7 @@ func providerID(p *wire.Provider) string {
 }
 
 func mermaidFlowchart(links []*providerLink, to io.Writer, opt linkViewOption) error {
-	const header = `flowchart TD;`
+	const header = `flowchart BT;`
 	if _, err := fmt.Fprintln(to, header); err != nil {
 		return err
 	}
