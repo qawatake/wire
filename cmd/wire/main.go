@@ -35,8 +35,8 @@ import (
 	"strings"
 
 	"github.com/google/subcommands"
-	"github.com/google/wire/internal/wire"
 	"github.com/pmezard/go-difflib/difflib"
+	"github.com/qawatake/wire/internal/wire"
 	"golang.org/x/tools/go/types/typeutil"
 )
 

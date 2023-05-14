@@ -1,4 +1,5 @@
-module github.com/google/wire
+// Changes made by qawatake (github.com/qawatake)
+module github.com/qawatake/wire
 
 go 1.12
 
