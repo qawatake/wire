@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"go/token"
 	"go/types"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -448,22 +449,17 @@ func (cmd *graphCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...inter
 				continue
 			}
 			for _, root := range set.Providers {
-				tree := newProviderTree(set, cmd.ignoreType, prefixes)
-				if err := tree.Build(root); err != nil {
-					errs = append(errs, err)
-					continue
-				}
-				if len(tree.lines) > 0 {
-					s, err := mermaidFlowchart(tree.lines)
-					if err != nil {
-						errs = append(errs, err)
-						continue
-					}
-					// not fmt.Println because s has trailing newline.
-					fmt.Print(s)
+				tree := newProviderTree(set).
+					Build(root).
+					Uniq().
+					Sort()
+				if len(tree.links) > 0 {
+					mermaidFlowchart(tree.links, os.Stdout, linkViewOption{
+						ignoreType: cmd.ignoreType,
+						prefixes:   prefixes,
+					})
 					return subcommands.ExitSuccess
 				}
-
 			}
 		}
 	}
@@ -471,54 +467,89 @@ func (cmd *graphCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...inter
 	return subcommands.ExitFailure
 }
 
+// providerLinkCollector
 type providerTree struct {
-	lines      []string
-	set        *wire.ProviderSet
-	ignoreType bool
-	prefixes   []string
+	set   *wire.ProviderSet
+	links []*providerLink
 }
 
-func newProviderTree(set *wire.ProviderSet, ignoreType bool, prefixes []string) *providerTree {
-	return &providerTree{set: set, ignoreType: ignoreType, prefixes: prefixes}
+type providerLink struct {
+	from         *wire.Provider
+	to           *wire.Provider
+	providedType types.Type
 }
 
-func (t *providerTree) Build(root *wire.Provider) error {
+type providerLinkKey struct {
+	from         string
+	to           string
+	providedType string
+}
+
+func newProviderTree(set *wire.ProviderSet) *providerTree {
+	return &providerTree{set: set}
+}
+
+func (link *providerLink) Key() providerLinkKey {
+	return providerLinkKey{
+		from:         providerID(link.from),
+		to:           providerID(link.to),
+		providedType: link.providedType.String(),
+	}
+}
+
+func (t *providerTree) Build(root *wire.Provider) *providerTree {
 	for _, arg := range root.Args {
 		if !t.set.For(arg.Type).IsProvider() {
 			continue
 		}
 		argProvider := t.set.For(arg.Type).Provider()
-		if t.ignoreType {
-			t.lines = append(t.lines, fmt.Sprintf("%s --> %s;", providerID(argProvider, t.prefixes), providerID(root, t.prefixes)))
-		} else {
-			t.lines = append(t.lines, fmt.Sprintf("%s -- %q --> %s;", providerID(argProvider, t.prefixes), arg.Type, providerID(root, t.prefixes)))
-		}
-		if err := t.Build(argProvider); err != nil {
-			return err
-		}
+		t.links = append(t.links, &providerLink{
+			from:         argProvider,
+			to:           root,
+			providedType: arg.Type,
+		})
+		t.Build(argProvider)
 	}
-	return nil
+	return t
 }
 
-func providerID(p *wire.Provider, prefixes []string) string {
-	id := p.Pkg.Path() + "." + p.Name
+func (t *providerTree) Uniq() *providerTree {
+	t.links = uniq(t.links)
+	return t
+}
 
-	// trim prefixes
-	for _, prefix := range prefixes {
-		i, found := strings.CutPrefix(id, prefix)
-		if found {
-			id = i
+func (t *providerTree) Sort() *providerTree {
+	sortKey := func(link *providerLink) string {
+		key := link.Key()
+		return key.from + key.to + key.providedType
+	}
+	sort.Slice(t.links, func(i, j int) bool {
+		return sortKey(t.links[i]) < sortKey(t.links[j])
+	})
+	return t
+}
+
+// the order of lines can be changed by uniq
+// the original slice is not changed
+func uniq(links []*providerLink) []*providerLink {
+	var uniqued []*providerLink
+	m := make(map[providerLinkKey]struct{})
+	for _, link := range links {
+		key := link.Key()
+		if _, found := m[key]; found {
 			continue
 		}
+		m[key] = struct{}{}
+		uniqued = append(uniqued, link)
 	}
-
-	// trim prefix "/"
-	id = strings.TrimPrefix(id, "/")
-
-	return id
+	return uniqued
 }
 
-func mermaidFlowchart(lines []string) (string, error) {
+func providerID(p *wire.Provider) string {
+	return p.Pkg.Path() + "." + p.Name
+}
+
+func mermaidFlowchart(links []*providerLink, to io.Writer, opt linkViewOption) {
 	var s string
 
 	theme := "%%{init:{'theme':'default','flowchart':{'rankSpacing':500}}}%%\n"
@@ -527,30 +558,37 @@ func mermaidFlowchart(lines []string) (string, error) {
 	s += theme
 	s += header
 
-	lines = uniq(lines)
-
-	sort.Slice(lines, func(i, j int) bool {
-		return strings.Compare(lines[i], lines[j]) < 0
-	})
-
-	for _, ss := range lines {
-		s += fmt.Sprintf("\t%s\n", ss)
+	for _, ss := range links {
+		s += fmt.Sprintf("\t%s\n", stringify(ss, opt))
 	}
 
-	return s, nil
+	// not fmt.FPrint because s has trailing newline.
+	fmt.Fprint(to, s)
 }
 
-// the order of lines can be changed by uniq
-func uniq(lines []string) []string {
-	m := make(map[string]struct{})
-	for _, s := range lines {
-		m[s] = struct{}{}
+func stringify(link *providerLink, opt linkViewOption) string {
+	from := trimPrefixes(providerID(link.from), opt.prefixes)
+	to := trimPrefixes(providerID(link.to), opt.prefixes)
+
+	if opt.ignoreType {
+		return fmt.Sprintf("%s --> %s;", from, to)
 	}
-	var ss []string
-	for k := range m {
-		ss = append(ss, k)
+	return fmt.Sprintf("%s -- %q --> %s;", from, link.providedType, to)
+}
+
+func trimPrefixes(s string, prefixes []string) string {
+	for _, prefix := range prefixes {
+		s, found := strings.CutPrefix(s, prefix)
+		if found {
+			return s
+		}
 	}
-	return ss
+	return s
+}
+
+type linkViewOption struct {
+	ignoreType bool
+	prefixes   []string
 }
 
 type outGroup struct {
