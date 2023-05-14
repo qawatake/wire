@@ -399,7 +399,6 @@ type graphCmd struct {
 	ignoreType bool
 	// TODO: [Interaction - Flowcharts Syntax | Mermaid](https://mermaid.js.org/syntax/flowchart.html#interaction)
 	// href bool
-	// TODO: sort by package name that is not trimmed
 	trimPrefixes string
 }
 
