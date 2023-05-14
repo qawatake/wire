@@ -417,6 +417,7 @@ func (cmd *graphCmd) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&cmd.injector, "injector", "", "target injector function")
 	f.StringVar(&cmd.tags, "tags", "", "append build tags to the default wirebuild")
 	f.BoolVar(&cmd.ignoreType, "ignore_type", false, "ignore provided types")
+	f.StringVar(&cmd.trimPrefixes, "trim_prefixes", "", "comma separated prefixes to trim from package name")
 }
 func (cmd *graphCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
 	if cmd.injector == "" {
@@ -424,6 +425,11 @@ func (cmd *graphCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...inter
 		f.Usage()
 		return subcommands.ExitFailure
 	}
+	prefixes := strings.Split(cmd.trimPrefixes, ",")
+	sort.Slice(prefixes, func(i, j int) bool {
+		return prefixes[i] > prefixes[j]
+	})
+
 	wd, err := os.Getwd()
 	if err != nil {
 		log.Println("failed to get working directory: ", err)
@@ -441,7 +447,7 @@ func (cmd *graphCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...inter
 				continue
 			}
 			for _, root := range set.Providers {
-				tree := newProviderTree(set, cmd.ignoreType)
+				tree := newProviderTree(set, cmd.ignoreType, prefixes)
 				if err := tree.Build(root); err != nil {
 					errs = append(errs, err)
 					continue
@@ -468,10 +474,11 @@ type providerTree struct {
 	lines      []string
 	set        *wire.ProviderSet
 	ignoreType bool
+	prefixes   []string
 }
 
-func newProviderTree(set *wire.ProviderSet, ignoreType bool) *providerTree {
-	return &providerTree{set: set, ignoreType: ignoreType}
+func newProviderTree(set *wire.ProviderSet, ignoreType bool, prefixes []string) *providerTree {
+	return &providerTree{set: set, ignoreType: ignoreType, prefixes: prefixes}
 }
 
 func (t *providerTree) Build(root *wire.Provider) error {
@@ -481,9 +488,9 @@ func (t *providerTree) Build(root *wire.Provider) error {
 		}
 		argProvider := t.set.For(arg.Type).Provider()
 		if t.ignoreType {
-			t.lines = append(t.lines, fmt.Sprintf("%s --> %s;", providerID(argProvider), providerID(root)))
+			t.lines = append(t.lines, fmt.Sprintf("%s --> %s;", providerID(argProvider, t.prefixes), providerID(root, t.prefixes)))
 		} else {
-			t.lines = append(t.lines, fmt.Sprintf("%s -- %q --> %s;", providerID(argProvider), arg.Type, providerID(root)))
+			t.lines = append(t.lines, fmt.Sprintf("%s -- %q --> %s;", providerID(argProvider, t.prefixes), arg.Type, providerID(root, t.prefixes)))
 		}
 		if err := t.Build(argProvider); err != nil {
 			return err
@@ -492,8 +499,22 @@ func (t *providerTree) Build(root *wire.Provider) error {
 	return nil
 }
 
-func providerID(p *wire.Provider) string {
-	return p.Pkg.Path() + "." + p.Name
+func providerID(p *wire.Provider, prefixes []string) string {
+	id := p.Pkg.Path() + "." + p.Name
+
+	// trim prefixes
+	for _, prefix := range prefixes {
+		i, found := strings.CutPrefix(id, prefix)
+		if found {
+			id = i
+			continue
+		}
+	}
+
+	// trim prefix "/"
+	id = strings.TrimPrefix(id, "/")
+
+	return id
 }
 
 func mermaidFlowchart(lines []string) (string, error) {
