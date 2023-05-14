@@ -446,23 +446,21 @@ func (cmd *graphCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...inter
 			if id.VarName != cmd.injector {
 				continue
 			}
-			for _, root := range set.Providers {
-				tree := newproviderLinkCollector(set).
-					Build(root).
-					Uniq().
-					Sort()
-				if len(tree.links) > 0 {
-					err := mermaidFlowchart(tree.links, os.Stdout, linkViewOption{
-						ignoreType: cmd.ignoreType,
-						prefixes:   prefixes,
-					})
-					if err != nil {
-						log.Println(err)
-						log.Println("failed to generate graph")
-						return subcommands.ExitFailure
-					}
-					return subcommands.ExitSuccess
+			tree := newproviderLinkCollector(set).
+				Build().
+				Uniq().
+				Sort()
+			if len(tree.links) > 0 {
+				err := mermaidFlowchart(tree.links, os.Stdout, linkViewOption{
+					ignoreType: cmd.ignoreType,
+					prefixes:   prefixes,
+				})
+				if err != nil {
+					log.Println(err)
+					log.Println("failed to generate graph")
+					return subcommands.ExitFailure
 				}
+				return subcommands.ExitSuccess
 			}
 		}
 	}
@@ -470,7 +468,6 @@ func (cmd *graphCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...inter
 	return subcommands.ExitFailure
 }
 
-// providerLinkCollector
 type providerLinkCollector struct {
 	set   *wire.ProviderSet
 	links []*providerLink
@@ -500,20 +497,28 @@ func (link *providerLink) Key() providerLinkKey {
 	}
 }
 
-func (t *providerLinkCollector) Build(root *wire.Provider) *providerLinkCollector {
-	for _, arg := range root.Args {
-		if !t.set.For(arg.Type).IsProvider() {
-			continue
-		}
-		argProvider := t.set.For(arg.Type).Provider()
-		t.links = append(t.links, &providerLink{
-			from:         argProvider,
-			to:           root,
-			providedType: arg.Type,
-		})
-		t.Build(argProvider)
-	}
+func (t *providerLinkCollector) Build() *providerLinkCollector {
+	t.build(t.set)
 	return t
+}
+
+func (t *providerLinkCollector) build(s *wire.ProviderSet) {
+	for _, p := range s.Providers {
+		for _, arg := range p.Args {
+			if !t.set.For(arg.Type).IsProvider() {
+				continue
+			}
+			argProvider := t.set.For(arg.Type).Provider()
+			t.links = append(t.links, &providerLink{
+				from:         argProvider,
+				to:           p,
+				providedType: arg.Type,
+			})
+		}
+	}
+	for _, ss := range s.Imports {
+		t.build(ss)
+	}
 }
 
 func (t *providerLinkCollector) Uniq() *providerLinkCollector {
