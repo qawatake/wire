@@ -392,7 +392,6 @@ func (cmd *checkCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...inter
 	return subcommands.ExitSuccess
 }
 
-// TODO: don't print theme
 type graphCmd struct {
 	injector   string
 	tags       string
@@ -453,10 +452,15 @@ func (cmd *graphCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...inter
 					Uniq().
 					Sort()
 				if len(tree.links) > 0 {
-					mermaidFlowchart(tree.links, os.Stdout, linkViewOption{
+					err := mermaidFlowchart(tree.links, os.Stdout, linkViewOption{
 						ignoreType: cmd.ignoreType,
 						prefixes:   prefixes,
 					})
+					if err != nil {
+						log.Println(err)
+						log.Println("failed to generate graph")
+						return subcommands.ExitFailure
+					}
 					return subcommands.ExitSuccess
 				}
 			}
@@ -548,21 +552,25 @@ func providerID(p *wire.Provider) string {
 	return p.Pkg.Path() + "." + p.Name
 }
 
-func mermaidFlowchart(links []*providerLink, to io.Writer, opt linkViewOption) {
-	var s string
+func mermaidFlowchart(links []*providerLink, to io.Writer, opt linkViewOption) error {
+	var s strings.Builder
 
-	theme := "%%{init:{'theme':'default','flowchart':{'rankSpacing':500}}}%%\n"
 	header := "flowchart TD;\n"
-
-	s += theme
-	s += header
+	if _, err := s.WriteString(header); err != nil {
+		return err
+	}
 
 	for _, ss := range links {
-		s += fmt.Sprintf("\t%s\n", stringify(ss, opt))
+		if _, err := s.WriteString(fmt.Sprintf("\t%s\n", stringify(ss, opt))); err != nil {
+			return err
+		}
 	}
 
 	// not fmt.FPrint because s has trailing newline.
-	fmt.Fprint(to, s)
+	if _, err := fmt.Fprint(to, s.String()); err != nil {
+		return err
+	}
+	return nil
 }
 
 func stringify(link *providerLink, opt linkViewOption) string {
