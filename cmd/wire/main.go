@@ -574,7 +574,8 @@ func stringify(link *providerLink, opt linkViewOption) string {
 	if opt.ignoreType {
 		return fmt.Sprintf("%s --> %s;", from, to)
 	}
-	return fmt.Sprintf("%s -- %q --> %s;", from, link.providedType, to)
+	t := removeSubStr(link.providedType.String(), opt.prefixes)
+	return fmt.Sprintf("%s -- %q --> %s;", from, t, to)
 }
 
 func trimPrefixes(s string, prefixes []string) string {
@@ -582,6 +583,16 @@ func trimPrefixes(s string, prefixes []string) string {
 		s, found := strings.CutPrefix(s, prefix)
 		if found {
 			return s
+		}
+	}
+	return s
+}
+
+// remove first occurrence of ss from s
+func removeSubStr(s string, substrs []string) string {
+	for _, ss := range substrs {
+		if strings.Contains(s, ss) {
+			return strings.Replace(s, ss, "", 1)
 		}
 	}
 	return s
