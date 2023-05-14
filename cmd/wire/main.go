@@ -449,7 +449,7 @@ func (cmd *graphCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...inter
 				continue
 			}
 			for _, root := range set.Providers {
-				tree := newProviderTree(set).
+				tree := newproviderLinkCollector(set).
 					Build(root).
 					Uniq().
 					Sort()
@@ -468,7 +468,7 @@ func (cmd *graphCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...inter
 }
 
 // providerLinkCollector
-type providerTree struct {
+type providerLinkCollector struct {
 	set   *wire.ProviderSet
 	links []*providerLink
 }
@@ -485,8 +485,8 @@ type providerLinkKey struct {
 	providedType string
 }
 
-func newProviderTree(set *wire.ProviderSet) *providerTree {
-	return &providerTree{set: set}
+func newproviderLinkCollector(set *wire.ProviderSet) *providerLinkCollector {
+	return &providerLinkCollector{set: set}
 }
 
 func (link *providerLink) Key() providerLinkKey {
@@ -497,7 +497,7 @@ func (link *providerLink) Key() providerLinkKey {
 	}
 }
 
-func (t *providerTree) Build(root *wire.Provider) *providerTree {
+func (t *providerLinkCollector) Build(root *wire.Provider) *providerLinkCollector {
 	for _, arg := range root.Args {
 		if !t.set.For(arg.Type).IsProvider() {
 			continue
@@ -513,12 +513,12 @@ func (t *providerTree) Build(root *wire.Provider) *providerTree {
 	return t
 }
 
-func (t *providerTree) Uniq() *providerTree {
+func (t *providerLinkCollector) Uniq() *providerLinkCollector {
 	t.links = uniq(t.links)
 	return t
 }
 
-func (t *providerTree) Sort() *providerTree {
+func (t *providerLinkCollector) Sort() *providerLinkCollector {
 	sortKey := func(link *providerLink) string {
 		key := link.Key()
 		return key.from + key.to + key.providedType
