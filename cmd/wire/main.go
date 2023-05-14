@@ -553,23 +553,17 @@ func providerID(p *wire.Provider) string {
 }
 
 func mermaidFlowchart(links []*providerLink, to io.Writer, opt linkViewOption) error {
-	var s strings.Builder
-
-	header := "flowchart TD;\n"
-	if _, err := s.WriteString(header); err != nil {
+	const header = `flowchart TD;`
+	if _, err := fmt.Fprintln(to, header); err != nil {
 		return err
 	}
 
 	for _, ss := range links {
-		if _, err := s.WriteString(fmt.Sprintf("\t%s\n", stringify(ss, opt))); err != nil {
+		if _, err := fmt.Fprintln(to, "\t", stringify(ss, opt)); err != nil {
 			return err
 		}
 	}
 
-	// not fmt.FPrint because s has trailing newline.
-	if _, err := fmt.Fprint(to, s.String()); err != nil {
-		return err
-	}
 	return nil
 }
 
