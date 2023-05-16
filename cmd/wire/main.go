@@ -446,13 +446,12 @@ func (cmd *graphCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...inter
 			if set.InjectorName != cmd.injector {
 				continue
 			}
-			tree := newproviderLinkCollector(set).
-				Build(set.InjectorOut).
+			links := newLinkCollection(set, set.InjectorOut).
 				Uniq().
 				Sort()
-			if len(tree.links) > 0 {
+			if len(links) > 0 {
 				d := newGraphDrawer()
-				err := d.Draw(tree.links, os.Stdout, linkViewOption{
+				err := d.Draw(links, os.Stdout, linkViewOption{
 					ignoreType: cmd.ignoreType,
 					prefixes:   prefixes,
 				})
@@ -467,23 +466,6 @@ func (cmd *graphCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...inter
 	}
 	log.Println("no graph generated")
 	return subcommands.ExitFailure
-}
-
-type providerLinkCollector struct {
-	set   *wire.ProviderSet
-	links []*wireLink
-}
-
-type providerLink struct {
-	from         *wire.Provider
-	to           *wire.Provider
-	providedType types.Type
-}
-
-type providerLinkKey struct {
-	from         string
-	to           string
-	providedType string
 }
 
 type wireNode struct {
@@ -507,27 +489,6 @@ func newFieldNode(f *wire.Field) *wireNode {
 
 func newArgNode(arg *wire.InjectorArg) *wireNode {
 	return &wireNode{arg: arg}
-}
-
-func (n *wireNode) Provider() (bool, *wire.Provider) {
-	if n.provider != nil {
-		return true, n.provider
-	}
-	return false, nil
-}
-
-func (n *wireNode) Value() (bool, *wire.Value) {
-	if n.value != nil {
-		return true, n.value
-	}
-	return false, nil
-}
-
-func (n *wireNode) Field() (bool, *wire.Field) {
-	if n.field != nil {
-		return true, n.field
-	}
-	return false, nil
 }
 
 func (n *wireNode) ID() string {
@@ -560,55 +521,57 @@ func (l *wireLink) Key() wireLinkKey {
 	}
 }
 
-func newproviderLinkCollector(set *wire.ProviderSet) *providerLinkCollector {
-	return &providerLinkCollector{set: set}
+type wireLinkKey struct {
+	from         string
+	to           string
+	providedType string
 }
 
-func (link *providerLink) Key() providerLinkKey {
-	return providerLinkKey{
-		from:         providerID(link.from),
-		to:           providerID(link.to),
-		providedType: link.providedType.String(),
-	}
+func providerID(p *wire.Provider) string {
+	return p.Pkg.Path() + "." + p.Name
 }
 
-func (c *providerLinkCollector) Build(target types.Type) *providerLinkCollector {
+type wireLinkCollection []*wireLink
+
+func newLinkCollection(set *wire.ProviderSet, target types.Type) wireLinkCollection {
 	visited := make(map[string]struct{})
-	nd := c.providingNode(target)
-	fmt.Println("🤖🤖🤖")
-	c.build3(visited, nd)
-	return c
+	nd := providingNode(set, target)
+	return collectLinks(set, visited, nd)
 }
 
-func (c *providerLinkCollector) build3(visited map[string]struct{}, nd *wireNode) {
+func collectLinks(set *wire.ProviderSet, visited map[string]struct{}, nd *wireNode) wireLinkCollection {
 	if _, found := visited[nd.ID()]; found {
-		return
+		return nil
 	}
 	switch {
 	case nd.value != nil:
-		return
+		return nil
 	case nd.arg != nil:
-		return
+		return nil
 	case nd.field != nil:
 		parent := nd.field.Parent
-		l := c.genLink(nd, parent)
-		c.links = append(c.links, l)
+		l := genLink(set, nd, parent)
 		visited[nd.ID()] = struct{}{}
-		next := c.providingNode(parent)
-		c.build3(visited, next)
+		next := providingNode(set, parent)
+		links := collectLinks(set, visited, next)
+		return append(links, l)
 	case nd.provider != nil:
+		var links wireLinkCollection
 		for _, arg := range nd.provider.Args {
-			l := c.genLink(nd, arg.Type)
-			c.links = append(c.links, l)
+			l := genLink(set, nd, arg.Type)
 			visited[nd.ID()] = struct{}{}
-			next := c.providingNode(arg.Type)
-			c.build3(visited, next)
+			links = append(links, l)
+			next := providingNode(set, arg.Type)
+			links = append(links, collectLinks(set, visited, next)...)
 		}
+		return links
+	default:
+		panic("unreachable")
 	}
 }
 
-func (c *providerLinkCollector) providingNode(t types.Type) *wireNode {
-	pt := c.set.For(t)
+func providingNode(set *wire.ProviderSet, t types.Type) *wireNode {
+	pt := set.For(t)
 	switch {
 	case pt.IsProvider():
 		return newProviderNode(pt.Provider())
@@ -623,8 +586,8 @@ func (c *providerLinkCollector) providingNode(t types.Type) *wireNode {
 	}
 }
 
-func (c *providerLinkCollector) genLink(to *wireNode, t types.Type) *wireLink {
-	from := c.providingNode(t)
+func genLink(set *wire.ProviderSet, to *wireNode, t types.Type) *wireLink {
+	from := providingNode(set, t)
 	return &wireLink{
 		from:         from,
 		to:           to,
@@ -632,20 +595,20 @@ func (c *providerLinkCollector) genLink(to *wireNode, t types.Type) *wireLink {
 	}
 }
 
-func (t *providerLinkCollector) Uniq() *providerLinkCollector {
-	t.links = uniq(t.links)
-	return t
+func (c wireLinkCollection) Uniq() wireLinkCollection {
+	c = (wireLinkCollection)(uniq(c))
+	return c
 }
 
-func (t *providerLinkCollector) Sort() *providerLinkCollector {
+func (c wireLinkCollection) Sort() wireLinkCollection {
 	sortKey := func(link *wireLink) string {
 		key := link.Key()
 		return key.from + key.to + key.providedType
 	}
-	sort.Slice(t.links, func(i, j int) bool {
-		return sortKey(t.links[i]) < sortKey(t.links[j])
+	sort.Slice(c, func(i, j int) bool {
+		return sortKey(c[i]) < sortKey(c[j])
 	})
-	return t
+	return c
 }
 
 // the order of lines can be changed by uniq
@@ -664,16 +627,6 @@ func uniq(links []*wireLink) []*wireLink {
 	return uniqued
 }
 
-type wireLinkKey struct {
-	from         string
-	to           string
-	providedType string
-}
-
-func providerID(p *wire.Provider) string {
-	return p.Pkg.Path() + "." + p.Name
-}
-
 type graphDrawer struct {
 	// assign a number to each provider
 	// key is providerID
@@ -683,20 +636,6 @@ type graphDrawer struct {
 func newGraphDrawer() *graphDrawer {
 	return &graphDrawer{
 		providerToIndex: make(map[string]int),
-	}
-}
-
-func (d *graphDrawer) numberProviders(links []*wireLink) {
-	for _, link := range links {
-		d.numberNode(link.from)
-		d.numberNode(link.to)
-	}
-}
-
-func (d *graphDrawer) numberNode(nd *wireNode) {
-	id := nd.ID()
-	if _, found := d.providerToIndex[id]; !found {
-		d.providerToIndex[id] = len(d.providerToIndex)
 	}
 }
 
@@ -715,6 +654,20 @@ func (d *graphDrawer) Draw(links []*wireLink, to io.Writer, opt linkViewOption) 
 	}
 
 	return nil
+}
+
+func (d *graphDrawer) numberProviders(links []*wireLink) {
+	for _, link := range links {
+		d.numberNode(link.from)
+		d.numberNode(link.to)
+	}
+}
+
+func (d *graphDrawer) numberNode(nd *wireNode) {
+	id := nd.ID()
+	if _, found := d.providerToIndex[id]; !found {
+		d.providerToIndex[id] = len(d.providerToIndex)
+	}
 }
 
 func (d *graphDrawer) stringify(link *wireLink, opt linkViewOption) string {
