@@ -107,6 +107,10 @@ type ProviderSet struct {
 	Imports   []*ProviderSet
 	// InjectorArgs is only filled in for wire.Build.
 	InjectorArgs *InjectorArgs
+	// InjectorOut is only filled in for wire.Build.
+	InjectorOut types.Type
+	// InjectorName is only filled in for wire.Build.
+	InjectorName string
 
 	// providerMap maps from provided type to a *ProvidedType.
 	// It includes all of the imported types.
@@ -336,7 +340,9 @@ func Load(ctx context.Context, wd string, env []string, tags string, patterns []
 					ImportPath: pkg.PkgPath,
 					FuncName:   fn.Name.Name,
 				})
-				id := ProviderSetID{ImportPath: set.PkgPath, VarName: fn.Name.Name}
+				set.InjectorOut = out.out
+				set.InjectorName = fn.Name.Name
+				id := ProviderSetID{ImportPath: set.PkgPath, VarName: set.VarName}
 				info.InjectorSets[id] = set
 			}
 		}
