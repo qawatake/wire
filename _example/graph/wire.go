@@ -1,6 +1,10 @@
 package main
 
-import "github.com/google/wire"
+import (
+	"context"
+
+	"github.com/google/wire"
+)
 
 var Set = wire.NewSet(
 	NewA,
@@ -17,7 +21,7 @@ var Set = wire.NewSet(
 
 type A struct{}
 
-func NewA() A {
+func NewA(context.Context) A {
 	return A{}
 }
 

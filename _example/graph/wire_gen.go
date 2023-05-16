@@ -14,9 +14,14 @@ func initializeX() X {
 	i2 := _wireCValue
 	d := NewD(i2)
 	mainE := _wireEValue
+	f := F{
+		B: b,
+		D: d,
+		E: mainE,
+	}
 	h := NewH(a, mainE)
 	g := h.G
-	x := NewX(b, d, g)
+	x := NewX(b, d, f, g)
 	return x
 }
 

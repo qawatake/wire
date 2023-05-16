@@ -3,8 +3,12 @@
 
 package main
 
-import "github.com/google/wire"
+import (
+	"context"
 
-func initializeX() X {
+	"github.com/google/wire"
+)
+
+func initializeX(context.Context) X {
 	panic(wire.Build(Set))
 }

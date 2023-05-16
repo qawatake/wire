@@ -1,17 +1,22 @@
 # wire graph
 
 ```sh
-wire graph -injector initializeX
+wire graph -injector initializeX -trim_prefixes github.com/qawatake/wire/_example/graph.
 ```
 
 ```mermaid
-%%{init:{'theme':'default','flowchart':{'rankSpacing':500}}}%%
 flowchart BT;
-	 0["github.com/qawatake/wire/_example/graph.F"] -- "github.com/qawatake/wire/_example/graph.F" --> 1["github.com/qawatake/wire/_example/graph.NewX"];
-	 2["github.com/qawatake/wire/_example/graph.NewA"] -- "github.com/qawatake/wire/_example/graph.I1" --> 3["github.com/qawatake/wire/_example/graph.NewB"];
-	 2["github.com/qawatake/wire/_example/graph.NewA"] -- "github.com/qawatake/wire/_example/graph.I1" --> 4["github.com/qawatake/wire/_example/graph.NewH"];
-	 3["github.com/qawatake/wire/_example/graph.NewB"] -- "github.com/qawatake/wire/_example/graph.B" --> 0["github.com/qawatake/wire/_example/graph.F"];
-	 3["github.com/qawatake/wire/_example/graph.NewB"] -- "github.com/qawatake/wire/_example/graph.B" --> 1["github.com/qawatake/wire/_example/graph.NewX"];
-	 5["github.com/qawatake/wire/_example/graph.NewD"] -- "github.com/qawatake/wire/_example/graph.D" --> 0["github.com/qawatake/wire/_example/graph.F"];
-	 5["github.com/qawatake/wire/_example/graph.NewD"] -- "github.com/qawatake/wire/_example/graph.D" --> 1["github.com/qawatake/wire/_example/graph.NewX"];
+	 0["context.Context"] -- "context.Context" --> 1["NewA"];
+	 2["E"] -- "E" --> 3["F"];
+	 2["E"] -- "E" --> 4["NewH"];
+	 3["F"] -- "F" --> 5["NewX"];
+	 6["H.G"] -- "G" --> 5["NewX"];
+	 7["I2"] -- "I2" --> 8["NewD"];
+	 1["NewA"] -- "I1" --> 9["NewB"];
+	 1["NewA"] -- "I1" --> 4["NewH"];
+	 9["NewB"] -- "B" --> 3["F"];
+	 9["NewB"] -- "B" --> 5["NewX"];
+	 8["NewD"] -- "D" --> 3["F"];
+	 8["NewD"] -- "D" --> 5["NewX"];
+	 4["NewH"] -- "H" --> 6["H.G"];
 ```
