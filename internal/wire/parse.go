@@ -342,7 +342,7 @@ func Load(ctx context.Context, wd string, env []string, tags string, patterns []
 				})
 				set.InjectorOut = out.out
 				set.InjectorName = fn.Name.Name
-				id := ProviderSetID{ImportPath: set.PkgPath, VarName: set.VarName}
+				id := ProviderSetID{ImportPath: set.PkgPath, VarName: fn.Name.Name + "/wire.Build"}
 				info.InjectorSets[id] = set
 			}
 		}
