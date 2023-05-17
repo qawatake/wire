@@ -446,9 +446,7 @@ func (cmd *graphCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...inter
 			if set.InjectorName != cmd.injector {
 				continue
 			}
-			links := newLinkCollection(set, set.InjectorOut).
-				Uniq().
-				Sort()
+			links := newLinkCollection(set, set.InjectorOut).Sort()
 			if len(links) > 0 {
 				d := newGraphDrawer()
 				err := d.Draw(links, os.Stdout, linkViewOption{
@@ -595,11 +593,6 @@ func genLink(set *wire.ProviderSet, to *wireNode, t types.Type) *wireLink {
 	}
 }
 
-func (c wireLinkCollection) Uniq() wireLinkCollection {
-	c = (wireLinkCollection)(uniq(c))
-	return c
-}
-
 func (c wireLinkCollection) Sort() wireLinkCollection {
 	sortKey := func(link *wireLink) string {
 		key := link.Key()
@@ -609,22 +602,6 @@ func (c wireLinkCollection) Sort() wireLinkCollection {
 		return sortKey(c[i]) < sortKey(c[j])
 	})
 	return c
-}
-
-// the order of lines can be changed by uniq
-// the original slice is not changed
-func uniq(links []*wireLink) []*wireLink {
-	var uniqued []*wireLink
-	m := make(map[wireLinkKey]struct{})
-	for _, link := range links {
-		key := link.Key()
-		if _, found := m[key]; found {
-			continue
-		}
-		m[key] = struct{}{}
-		uniqued = append(uniqued, link)
-	}
-	return uniqued
 }
 
 type graphDrawer struct {
