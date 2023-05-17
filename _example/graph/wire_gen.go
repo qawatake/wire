@@ -6,10 +6,14 @@
 
 package main
 
+import (
+	"context"
+)
+
 // Injectors from injector.go:
 
-func initializeX() X {
-	a := NewA()
+func initializeX(contextContext context.Context) X {
+	a := NewA(contextContext)
 	b := NewB(a)
 	i2 := _wireCValue
 	d := NewD(i2)

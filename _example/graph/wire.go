@@ -56,7 +56,7 @@ type F struct {
 }
 
 type G struct {
-	I1
+	A
 }
 
 type H struct {
@@ -64,8 +64,8 @@ type H struct {
 	G
 }
 
-func NewH(i I1, e E) H {
-	g := G{i}
+func NewH(a A, e E) H {
+	g := G{a}
 	return H{c, g}
 }
 
