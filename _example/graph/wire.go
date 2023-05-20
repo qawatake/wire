@@ -10,9 +10,9 @@ var Set = wire.NewSet(
 	NewA,
 	wire.Bind(new(I1), new(A)),
 	NewB,
-	wire.InterfaceValue(new(I2), c),
+	wire.InterfaceValue(new(I2), C{}),
 	NewD,
-	wire.Value(e),
+	wire.Value(E{}),
 	wire.Struct(new(F), "*"),
 	NewH,
 	wire.FieldsOf(new(H), "G"),
@@ -35,8 +35,6 @@ func NewB(i I1) B {
 
 type C struct{}
 
-var c C
-
 type D struct {
 	I2
 }
@@ -46,8 +44,6 @@ func NewD(i I2) D {
 }
 
 type E struct{}
-
-var e E
 
 type F struct {
 	B
@@ -60,13 +56,13 @@ type G struct {
 }
 
 type H struct {
-	C
+	E
 	G
 }
 
 func NewH(a A, e E) H {
 	g := G{a}
-	return H{c, g}
+	return H{e, g}
 }
 
 type X struct{}

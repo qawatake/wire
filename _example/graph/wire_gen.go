@@ -17,19 +17,19 @@ func initializeX(contextContext context.Context) X {
 	b := NewB(a)
 	i2 := _wireCValue
 	d := NewD(i2)
-	mainE := _wireEValue
+	e := _wireEValue
 	f := F{
 		B: b,
 		D: d,
-		E: mainE,
+		E: e,
 	}
-	h := NewH(a, mainE)
+	h := NewH(a, e)
 	g := h.G
 	x := NewX(b, d, f, g)
 	return x
 }
 
 var (
-	_wireCValue = c
-	_wireEValue = e
+	_wireCValue = C{}
+	_wireEValue = E{}
 )
