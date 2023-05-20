@@ -664,9 +664,8 @@ func (d *graphDrawer) toNodeText(p *wireNode, opt linkViewOption) string {
 
 func trimPrefixes(s string, prefixes []string) string {
 	for _, prefix := range prefixes {
-		s, found := strings.CutPrefix(s, prefix)
-		if found {
-			return s
+		if strings.HasPrefix(s, prefix) {
+			return strings.TrimPrefix(s, prefix)
 		}
 	}
 	return s
