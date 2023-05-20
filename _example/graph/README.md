@@ -41,3 +41,64 @@ flowchart BT;
 	 8["NewD"] -- "D" --> 5["NewX"];
 	 4["NewH"] -- "H" --> 6("H.G");
 ```
+
+## Node shapes
+
+### Function Provider
+
+```go
+NewX
+```
+
+```mermaid
+flowchart
+	0["NewX"];
+```
+
+### Struct Provider
+
+```go
+wire.Struct(new(F), "*")
+```
+
+```mermaid
+flowchart
+	0{{"NewF"}};
+```
+
+### Value Provider
+
+```go
+wire.Value(E{})
+wire.InterfaceValue(new(I2), C{})
+```
+
+```mermaid
+flowchart
+	0[["E"]]
+	1[["I2"]]
+```
+
+### Field Provider
+
+```go
+wire.FieldsOf(new(H), "G")
+```
+
+```mermaid
+flowchart
+	0("H.G")
+```
+
+### Injector Argument
+
+```go
+func initializeX(context.Context) X {
+	panic(wire.Build(Set))
+}
+```
+
+```mermaid
+flowchart
+	0(["context.Context"])
+```
