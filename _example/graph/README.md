@@ -1,5 +1,7 @@
 # wire graph
 
+The `graph` subcommand outputs the mermaid-js flowchart to stdout.
+
 ```sh
 wire graph -injector initializeX -trim_prefixes github.com/qawatake/wire/_example/graph.
 ```
