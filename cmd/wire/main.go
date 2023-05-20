@@ -659,7 +659,21 @@ func (d *graphDrawer) stringify(link *wireLink, opt linkViewOption) string {
 }
 
 func (d *graphDrawer) toNodeText(p *wireNode, opt linkViewOption) string {
-	return fmt.Sprintf("%d[%q]", d.providerToIndex[p.ID()], trimPrefixes(p.ID(), opt.prefixes))
+	switch {
+	case p.value != nil:
+		return fmt.Sprintf("%d[[%q]]", d.providerToIndex[p.ID()], trimPrefixes(p.ID(), opt.prefixes))
+	case p.arg != nil:
+		return fmt.Sprintf("%d([%q])", d.providerToIndex[p.ID()], trimPrefixes(p.ID(), opt.prefixes))
+	case p.field != nil:
+		return fmt.Sprintf("%d(%q)", d.providerToIndex[p.ID()], trimPrefixes(p.ID(), opt.prefixes))
+	case p.provider != nil:
+		if p.provider.IsStruct {
+			return fmt.Sprintf("%d{{%q}}", d.providerToIndex[p.ID()], trimPrefixes(p.ID(), opt.prefixes))
+		}
+		return fmt.Sprintf("%d[%q]", d.providerToIndex[p.ID()], trimPrefixes(p.ID(), opt.prefixes))
+	default:
+		panic("unreachable")
+	}
 }
 
 func trimPrefixes(s string, prefixes []string) string {
