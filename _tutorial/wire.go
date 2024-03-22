@@ -26,3 +26,7 @@ func InitializeEvent(phrase string) (Event, error) {
 	wire.Build(NewEvent, NewGreeter, NewMessage)
 	return Event{}, nil
 }
+
+func InitializeX(g God) A {
+	panic(wire.Build(set))
+}

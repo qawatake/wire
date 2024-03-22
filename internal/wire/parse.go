@@ -1038,6 +1038,33 @@ func processFieldsOf(fset *token.FileSet, info *types.Info, call *ast.CallExpr) 
 	}
 
 	fields := make([]*Field, 0, len(call.Args)-1)
+	startExists := func() bool {
+		for i := 1; i < len(call.Args); i++ {
+			if b, ok := call.Args[i].(*ast.BasicLit); ok && b.Value == `"*"` {
+				return true
+			}
+		}
+		return false
+	}()
+	if startExists {
+		for i := 0; i < struc.NumFields(); i++ {
+			v := struc.Field(i)
+			out := []types.Type{v.Type()}
+			if isPtrToStruct {
+				// If the field is from a pointer to a struct, then
+				// wire.Fields also provides a pointer to the field.
+				out = append(out, types.NewPointer(v.Type()))
+			}
+			fields = append(fields, &Field{
+				Parent: structPtr.Elem(),
+				Name:   v.Name(),
+				Pkg:    v.Pkg(),
+				Pos:    v.Pos(),
+				Out:    out,
+			})
+		}
+		return fields, nil
+	}
 	for i := 1; i < len(call.Args); i++ {
 		v, err := checkField(call.Args[i], struc)
 		if err != nil {
@@ -1173,9 +1200,9 @@ func (pt ProvidedType) IsNil() bool {
 //
 //   - For a function provider, this is the first return value type.
 //   - For a struct provider, this is either the struct type or the pointer type
-// 	   whose element type is the struct type.
-// 	 - For a value, this is the type of the expression.
-// 	 - For an argument, this is the type of the argument.
+//     whose element type is the struct type.
+//   - For a value, this is the type of the expression.
+//   - For an argument, this is the type of the argument.
 func (pt ProvidedType) Type() types.Type {
 	return pt.t
 }

@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	"github.com/google/wire"
 )
 
 // Message is what greeters will use to greet guests.
@@ -80,4 +82,25 @@ func main() {
 		os.Exit(2)
 	}
 	e.Start()
+}
+
+type X int
+type Y int
+type Z int
+
+type A struct{}
+
+type God struct {
+	X X
+	Y Y
+	Z Z
+}
+
+var set = wire.NewSet(
+	New,
+	wire.FieldsOf(new(God), "*"),
+)
+
+func New(X, Y, Z) A {
+	return A{}
 }
