@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Changes made by qawatake (github.com/qawatake)
+
 // Wire is a compile-time dependency injection tool.
 //
 // For an overview, see https://github.com/google/wire/blob/master/README.md
@@ -23,6 +25,7 @@ import (
 	"fmt"
 	"go/token"
 	"go/types"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -32,8 +35,8 @@ import (
 	"strings"
 
 	"github.com/google/subcommands"
-	"github.com/google/wire/internal/wire"
 	"github.com/pmezard/go-difflib/difflib"
+	"github.com/qawatake/wire/internal/wire"
 	"golang.org/x/tools/go/types/typeutil"
 )
 
@@ -45,6 +48,7 @@ func main() {
 	subcommands.Register(&diffCmd{}, "")
 	subcommands.Register(&genCmd{}, "")
 	subcommands.Register(&showCmd{}, "")
+	subcommands.Register(&graphCmd{}, "")
 	flag.Parse()
 
 	// Initialize the default logger to log to stderr.
@@ -64,6 +68,7 @@ func main() {
 		"diff":     true,
 		"gen":      true,
 		"show":     true,
+		"graph":    true,
 	}
 	// Default to running the "gen" command.
 	if args := flag.Args(); len(args) == 0 || !allCmds[args[0]] {
@@ -385,6 +390,314 @@ func (cmd *checkCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...inter
 		return subcommands.ExitFailure
 	}
 	return subcommands.ExitSuccess
+}
+
+type graphCmd struct {
+	injector   string
+	tags       string
+	ignoreType bool
+	// TODO: [Interaction - Flowcharts Syntax | Mermaid](https://mermaid.js.org/syntax/flowchart.html#interaction)
+	// href bool
+	trimPrefixes string
+}
+
+func (*graphCmd) Name() string { return "graph" }
+func (*graphCmd) Synopsis() string {
+	return "print a graph of the providers"
+}
+func (*graphCmd) Usage() string {
+	return `graph -injector [injector_function] [package]
+
+	Given a package, graph prints a graph of the providers.
+
+	If no packages are listed, it defaults to ".".
+`
+}
+func (cmd *graphCmd) SetFlags(f *flag.FlagSet) {
+	f.StringVar(&cmd.injector, "injector", "", "target injector function")
+	f.StringVar(&cmd.tags, "tags", "", "append build tags to the default wirebuild")
+	f.BoolVar(&cmd.ignoreType, "ignore_type", false, "ignore provided types")
+	f.StringVar(&cmd.trimPrefixes, "trim_prefixes", "", "comma separated prefixes to trim from package name")
+}
+func (cmd *graphCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+	if cmd.injector == "" {
+		log.Println("injector is required")
+		f.Usage()
+		return subcommands.ExitFailure
+	}
+	prefixes := strings.Split(cmd.trimPrefixes, ",")
+	sort.Slice(prefixes, func(i, j int) bool {
+		return prefixes[i] > prefixes[j]
+	})
+
+	wd, err := os.Getwd()
+	if err != nil {
+		log.Println("failed to get working directory: ", err)
+		return subcommands.ExitFailure
+	}
+	info, errs := wire.Load(ctx, wd, os.Environ(), cmd.tags, packages(f))
+	if len(errs) > 0 {
+		logErrors(errs)
+		log.Println("error loading packages")
+		return subcommands.ExitFailure
+	}
+	if info != nil {
+		for _, set := range info.InjectorSets {
+			if set.InjectorName != cmd.injector {
+				continue
+			}
+			links := newLinkCollection(set, set.InjectorOut).Sort()
+			if len(links) > 0 {
+				d := newGraphDrawer()
+				err := d.Draw(links, os.Stdout, linkViewOption{
+					ignoreType: cmd.ignoreType,
+					prefixes:   prefixes,
+				})
+				if err != nil {
+					log.Println(err)
+					log.Println("failed to generate graph")
+					return subcommands.ExitFailure
+				}
+				return subcommands.ExitSuccess
+			}
+		}
+	}
+	log.Println("no graph generated")
+	return subcommands.ExitFailure
+}
+
+type wireNode struct {
+	provider *wire.Provider
+	value    *wire.Value
+	field    *wire.Field
+	arg      *wire.InjectorArg
+}
+
+func newProviderNode(p *wire.Provider) *wireNode {
+	return &wireNode{provider: p}
+}
+
+func newValueNode(v *wire.Value) *wireNode {
+	return &wireNode{value: v}
+}
+
+func newFieldNode(f *wire.Field) *wireNode {
+	return &wireNode{field: f}
+}
+
+func newArgNode(arg *wire.InjectorArg) *wireNode {
+	return &wireNode{arg: arg}
+}
+
+func (n *wireNode) ID() string {
+	if n.provider != nil {
+		return providerID(n.provider)
+	}
+	if n.value != nil {
+		return n.value.Out.String()
+	}
+	if n.arg != nil {
+		return n.arg.Args.Tuple.At(n.arg.Index).Type().String()
+	}
+	if n.field != nil {
+		return n.field.Parent.String() + "." + n.field.Name
+	}
+	panic("unreachable")
+}
+
+type wireLink struct {
+	from         *wireNode
+	to           *wireNode
+	providedType types.Type
+}
+
+func (l *wireLink) Key() wireLinkKey {
+	return wireLinkKey{
+		from:         l.from.ID(),
+		to:           l.to.ID(),
+		providedType: l.providedType.String(),
+	}
+}
+
+type wireLinkKey struct {
+	from         string
+	to           string
+	providedType string
+}
+
+func providerID(p *wire.Provider) string {
+	return p.Pkg.Path() + "." + p.Name
+}
+
+type wireLinkCollection []*wireLink
+
+func newLinkCollection(set *wire.ProviderSet, target types.Type) wireLinkCollection {
+	visited := make(map[string]struct{})
+	nd := providingNode(set, target)
+	return collectLinks(set, visited, nd)
+}
+
+func collectLinks(set *wire.ProviderSet, visited map[string]struct{}, nd *wireNode) wireLinkCollection {
+	if _, found := visited[nd.ID()]; found {
+		return nil
+	}
+	switch {
+	case nd.value != nil:
+		return nil
+	case nd.arg != nil:
+		return nil
+	case nd.field != nil:
+		parent := nd.field.Parent
+		l := genLink(set, nd, parent)
+		visited[nd.ID()] = struct{}{}
+		next := providingNode(set, parent)
+		links := collectLinks(set, visited, next)
+		return append(links, l)
+	case nd.provider != nil:
+		var links wireLinkCollection
+		for _, arg := range nd.provider.Args {
+			l := genLink(set, nd, arg.Type)
+			visited[nd.ID()] = struct{}{}
+			links = append(links, l)
+			next := providingNode(set, arg.Type)
+			links = append(links, collectLinks(set, visited, next)...)
+		}
+		return links
+	default:
+		panic("unreachable")
+	}
+}
+
+func providingNode(set *wire.ProviderSet, t types.Type) *wireNode {
+	pt := set.For(t)
+	switch {
+	case pt.IsProvider():
+		return newProviderNode(pt.Provider())
+	case pt.IsValue():
+		return newValueNode(pt.Value())
+	case pt.IsArg():
+		return newArgNode(pt.Arg())
+	case pt.IsField():
+		return newFieldNode(pt.Field())
+	default:
+		panic("unreachable")
+	}
+}
+
+func genLink(set *wire.ProviderSet, to *wireNode, t types.Type) *wireLink {
+	from := providingNode(set, t)
+	return &wireLink{
+		from:         from,
+		to:           to,
+		providedType: t,
+	}
+}
+
+func (c wireLinkCollection) Sort() wireLinkCollection {
+	sortKey := func(link *wireLink) string {
+		key := link.Key()
+		return key.from + key.to + key.providedType
+	}
+	sort.Slice(c, func(i, j int) bool {
+		return sortKey(c[i]) < sortKey(c[j])
+	})
+	return c
+}
+
+type graphDrawer struct {
+	// assign a number to each provider
+	// key is providerID
+	providerToIndex map[string]int
+}
+
+func newGraphDrawer() *graphDrawer {
+	return &graphDrawer{
+		providerToIndex: make(map[string]int),
+	}
+}
+
+func (d *graphDrawer) Draw(links []*wireLink, to io.Writer, opt linkViewOption) error {
+	d.numberProviders(links)
+
+	const header = `flowchart BT;`
+	if _, err := fmt.Fprintln(to, header); err != nil {
+		return err
+	}
+
+	for _, link := range links {
+		if _, err := fmt.Fprintln(to, "\t", d.stringify(link, opt)); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (d *graphDrawer) numberProviders(links []*wireLink) {
+	for _, link := range links {
+		d.numberNode(link.from)
+		d.numberNode(link.to)
+	}
+}
+
+func (d *graphDrawer) numberNode(nd *wireNode) {
+	id := nd.ID()
+	if _, found := d.providerToIndex[id]; !found {
+		d.providerToIndex[id] = len(d.providerToIndex)
+	}
+}
+
+func (d *graphDrawer) stringify(link *wireLink, opt linkViewOption) string {
+	from := d.toNodeText(link.from, opt)
+	to := d.toNodeText(link.to, opt)
+
+	if opt.ignoreType {
+		return fmt.Sprintf("%s --> %s;", from, to)
+	}
+	t := removeSubStr(link.providedType.String(), opt.prefixes)
+	return fmt.Sprintf("%s -- %q --> %s;", from, t, to)
+}
+
+func (d *graphDrawer) toNodeText(p *wireNode, opt linkViewOption) string {
+	switch {
+	case p.value != nil:
+		return fmt.Sprintf("%d[[%q]]", d.providerToIndex[p.ID()], trimPrefixes(p.ID(), opt.prefixes))
+	case p.arg != nil:
+		return fmt.Sprintf("%d([%q])", d.providerToIndex[p.ID()], trimPrefixes(p.ID(), opt.prefixes))
+	case p.field != nil:
+		return fmt.Sprintf("%d(%q)", d.providerToIndex[p.ID()], trimPrefixes(p.ID(), opt.prefixes))
+	case p.provider != nil:
+		if p.provider.IsStruct {
+			return fmt.Sprintf("%d{{%q}}", d.providerToIndex[p.ID()], trimPrefixes(p.ID(), opt.prefixes))
+		}
+		return fmt.Sprintf("%d[%q]", d.providerToIndex[p.ID()], trimPrefixes(p.ID(), opt.prefixes))
+	default:
+		panic("unreachable")
+	}
+}
+
+func trimPrefixes(s string, prefixes []string) string {
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(s, prefix) {
+			return strings.TrimPrefix(s, prefix)
+		}
+	}
+	return s
+}
+
+// remove first occurrence of ss from s
+func removeSubStr(s string, substrs []string) string {
+	for _, ss := range substrs {
+		if strings.Contains(s, ss) {
+			return strings.Replace(s, ss, "", 1)
+		}
+	}
+	return s
+}
+
+type linkViewOption struct {
+	ignoreType bool
+	prefixes   []string
 }
 
 type outGroup struct {

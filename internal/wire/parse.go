@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Changes made by qawatake (github.com/qawatake)
+
 package wire
 
 import (
@@ -105,6 +107,10 @@ type ProviderSet struct {
 	Imports   []*ProviderSet
 	// InjectorArgs is only filled in for wire.Build.
 	InjectorArgs *InjectorArgs
+	// InjectorOut is only filled in for wire.Build.
+	InjectorOut types.Type
+	// InjectorName is only filled in for wire.Build.
+	InjectorName string
 
 	// providerMap maps from provided type to a *ProvidedType.
 	// It includes all of the imported types.
@@ -258,8 +264,9 @@ func Load(ctx context.Context, wd string, env []string, tags string, patterns []
 	}
 	fset := pkgs[0].Fset
 	info := &Info{
-		Fset: fset,
-		Sets: make(map[ProviderSetID]*ProviderSet),
+		Fset:         fset,
+		Sets:         make(map[ProviderSetID]*ProviderSet),
+		InjectorSets: make(map[ProviderSetID]*ProviderSet),
 	}
 	oc := newObjectCache(pkgs)
 	ec := new(errorCollector)
@@ -333,6 +340,10 @@ func Load(ctx context.Context, wd string, env []string, tags string, patterns []
 					ImportPath: pkg.PkgPath,
 					FuncName:   fn.Name.Name,
 				})
+				set.InjectorOut = out.out
+				set.InjectorName = fn.Name.Name
+				id := ProviderSetID{ImportPath: set.PkgPath, VarName: fn.Name.Name + "/wire.Build"}
+				info.InjectorSets[id] = set
 			}
 		}
 	}
@@ -391,6 +402,9 @@ type Info struct {
 	// Injectors contains all the injector functions in the initial packages.
 	// The order is undefined.
 	Injectors []*Injector
+
+	// wire.Build
+	InjectorSets map[ProviderSetID]*ProviderSet
 }
 
 // A ProviderSetID identifies a named provider set.
