@@ -451,7 +451,8 @@ func (cmd *graphCmd) Execute(ctx context.Context, f *flag.FlagSet, args ...inter
 				Uniq().
 				Sort()
 			if len(tree.links) > 0 {
-				err := mermaidFlowchart(tree.links, os.Stdout, linkViewOption{
+				d := newGraphDrawer()
+				err := d.Draw(tree.links, os.Stdout, linkViewOption{
 					ignoreType: cmd.ignoreType,
 					prefixes:   prefixes,
 				})
@@ -557,14 +558,42 @@ func providerID(p *wire.Provider) string {
 	return p.Pkg.Path() + "." + p.Name
 }
 
-func mermaidFlowchart(links []*providerLink, to io.Writer, opt linkViewOption) error {
+type graphDrawer struct {
+	// assign a number to each provider
+	// key is providerID
+	providerToIndex map[string]int
+}
+
+func newGraphDrawer() *graphDrawer {
+	return &graphDrawer{
+		providerToIndex: make(map[string]int),
+	}
+}
+
+func (d *graphDrawer) registerProviders(links []*providerLink) {
+	for _, link := range links {
+		d.registerProvider(link.from)
+		d.registerProvider(link.to)
+	}
+}
+
+func (d *graphDrawer) registerProvider(p *wire.Provider) {
+	id := providerID(p)
+	if _, found := d.providerToIndex[id]; !found {
+		d.providerToIndex[id] = len(d.providerToIndex)
+	}
+}
+
+func (d *graphDrawer) Draw(links []*providerLink, to io.Writer, opt linkViewOption) error {
+	d.registerProviders(links)
+
 	const header = `flowchart BT;`
 	if _, err := fmt.Fprintln(to, header); err != nil {
 		return err
 	}
 
 	for _, ss := range links {
-		if _, err := fmt.Fprintln(to, "\t", stringify(ss, opt)); err != nil {
+		if _, err := fmt.Fprintln(to, "\t", d.stringify(ss, opt)); err != nil {
 			return err
 		}
 	}
@@ -572,15 +601,19 @@ func mermaidFlowchart(links []*providerLink, to io.Writer, opt linkViewOption) e
 	return nil
 }
 
-func stringify(link *providerLink, opt linkViewOption) string {
-	from := trimPrefixes(providerID(link.from), opt.prefixes)
-	to := trimPrefixes(providerID(link.to), opt.prefixes)
+func (d *graphDrawer) stringify(link *providerLink, opt linkViewOption) string {
+	from := d.toNodeText(link.from, opt)
+	to := d.toNodeText(link.to, opt)
 
 	if opt.ignoreType {
 		return fmt.Sprintf("%s --> %s;", from, to)
 	}
 	t := removeSubStr(link.providedType.String(), opt.prefixes)
 	return fmt.Sprintf("%s -- %q --> %s;", from, t, to)
+}
+
+func (d *graphDrawer) toNodeText(p *wire.Provider, opt linkViewOption) string {
+	return fmt.Sprintf("%d[%q]", d.providerToIndex[providerID(p)], trimPrefixes(providerID(p), opt.prefixes))
 }
 
 func trimPrefixes(s string, prefixes []string) string {
