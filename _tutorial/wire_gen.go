@@ -8,6 +8,8 @@ package main
 
 // Injectors from wire.go:
 
+// InitializeEvent creates an Event. It will error if the Event is staffed with
+// a grumpy greeter.
 func InitializeEvent(phrase string) (Event, error) {
 	message := NewMessage(phrase)
 	greeter := NewGreeter(message)
@@ -16,4 +18,12 @@ func InitializeEvent(phrase string) (Event, error) {
 		return Event{}, err
 	}
 	return event, nil
+}
+
+func InitializeX(g God) A {
+	x := g.X
+	y := g.Y
+	z := g.Z
+	a := New(x, y, z)
+	return a
 }
